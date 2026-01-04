@@ -62,12 +62,28 @@ li {
     border-bottom: 1px solid #eee;
 }
 
-li.completed {
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+
+th, td {
+    padding: 10px;
+    border: 1px solid #ddd;
+    text-align: left;
+}
+
+th {
+    background-color: #f2f2f2;
+}
+
+tr.completed span {
     text-decoration: line-through;
     color: #888;
 }
 
-li button {
+td button {
     margin-left: 10px;
 }
     </style>
@@ -80,47 +96,139 @@ li button {
             <input type="text" id="taskInput" placeholder="Ajouter une tâche...">
             <button type="submit">Ajouter</button>
         </form>
-        <ul id="taskList">
-        </ul>
+        <table id="taskTable">
+            <thead>
+                <tr>
+                    <th>Tâche</th>
+                    <th>Date de Création</th>
+                    <th>Date de Fin</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="taskList">
+            </tbody>
+        </table>
+        <button id="importButton" style="margin-top: 20px;">Importer les tâches</button>
+        <button id="exportButton" style="margin-top: 20px;">Exporter les tâches</button>
+        <input type="file" id="importFile" accept=".json" style="display: none;">
     </div>
     <script >
             const taskForm = document.getElementById('taskForm');
             const taskInput = document.getElementById('taskInput');
-            const taskList = document.getElementById('taskList');
+            const taskList = document.getElementById('taskTable').querySelector('tbody');
+            const exportButton = document.getElementById('exportButton');
+            const importButton = document.getElementById('importButton');
+            const importFile = document.getElementById('importFile');
 
-            taskForm.addEventListener('submit', function (event)
-            {
-                event.preventDefault(); // Empêche le rechargement de la page
+            document.addEventListener('DOMContentLoaded', loadTasks);
+            exportButton.addEventListener('click', exportTasks);
+            importButton.addEventListener('click', () => importFile.click());
+            importFile.addEventListener('change', importTasks);
 
+            taskForm.addEventListener('submit', function (event) {
+                event.preventDefault();
                 const taskText = taskInput.value.trim();
-                if (taskText)
-                {
-                    addTask(taskText);
-                    taskInput.value = ''; // Réinitialise le champ de texte
+                if (taskText) {
+                    const task = {
+                        text: taskText,
+                        created: new Date().toISOString(),
+                        completed: null
+                    };
+                    addTask(task);
+                    taskInput.value = '';
+                    saveTasks();
                 }
             });
 
-            function addTask(taskText)
-            {
-                const taskItem = document.createElement('li');
+            function addTask(task) {
+                const taskItem = taskList.insertRow();
+                taskItem.dataset.created = task.created;
+                if (task.completed) {
+                    taskItem.classList.add('completed');
+                    taskItem.dataset.completed = task.completed;
+                }
+
+                const creationDate = new Date(task.created).toLocaleString('fr-FR');
+                const completionDate = task.completed ? new Date(task.completed).toLocaleString('fr-FR') : 'En cours';
+
                 taskItem.innerHTML = `
-        <span>${taskText}</span>
-        <button class="complete">Terminé</button>
-        <button class="delete">Supprimer</button>
-    `;
+                    <td><span>${task.text}</span></td>
+                    <td>${creationDate}</td>
+                    <td class="completion-date">${completionDate}</td>
+                    <td>
+                        <button class="complete">Terminé</button>
+                        <button class="delete">Supprimer</button>
+                    </td>
+                `;
 
-                taskList.appendChild(taskItem);
-
-                // Gestion des événements pour les boutons
-                taskItem.querySelector('.complete').addEventListener('click', function ()
-                {
+                taskItem.querySelector('.complete').addEventListener('click', function () {
                     taskItem.classList.toggle('completed');
+                    const now = new Date().toISOString();
+                    if (taskItem.classList.contains('completed')) {
+                        taskItem.dataset.completed = now;
+                        taskItem.querySelector('.completion-date').textContent = new Date(now).toLocaleString('fr-FR');
+                    } else {
+                        delete taskItem.dataset.completed;
+                        taskItem.querySelector('.completion-date').textContent = 'En cours';
+                    }
+                    saveTasks();
                 });
 
-                taskItem.querySelector('.delete').addEventListener('click', function ()
-                {
+                taskItem.querySelector('.delete').addEventListener('click', function () {
                     taskItem.remove();
+                    saveTasks();
                 });
+            }
+
+            function saveTasks() {
+                const tasks = [];
+                document.querySelectorAll('#taskList tr').forEach(function (taskItem) {
+                    tasks.push({
+                        text: taskItem.querySelector('span').textContent,
+                        created: taskItem.dataset.created,
+                        completed: taskItem.dataset.completed || null
+                    });
+                });
+                localStorage.setItem('tasks', JSON.stringify(tasks));
+            }
+
+            function loadTasks() {
+                const tasks = JSON.parse(localStorage.getItem('tasks')) || [];
+                tasks.forEach(addTask);
+            }
+
+            function exportTasks() {
+                const tasks = localStorage.getItem('tasks') || '[]';
+                const blob = new Blob([tasks], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'tasks.json';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
+
+            function importTasks(event) {
+                const file = event.target.files[0];
+                if (!file) {
+                    return;
+                }
+
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        const tasks = JSON.parse(e.target.result);
+                        localStorage.setItem('tasks', JSON.stringify(tasks));
+                        taskList.innerHTML = ''; // Clear current tasks
+                        loadTasks(); // Load new tasks
+                    } catch (error) {
+                        alert('Erreur: Le fichier JSON est invalide.');
+                    }
+                };
+                reader.readAsText(file);
+                importFile.value = ''; // Reset file input
             }
     </script>
 </body>
